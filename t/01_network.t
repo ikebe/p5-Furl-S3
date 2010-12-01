@@ -1,0 +1,119 @@
+
+use strict;
+use Test::More;
+use Furl::S3;
+
+unless ( $ENV{TEST_AWS_ACCESS_KEY_ID} && $ENV{TEST_AWS_SECRET_ACCESS_KEY} ) {
+    plan skip_all => 'network tests are skipped';
+}
+
+my $s3 = Furl::S3->new(
+    aws_access_key_id => $ENV{TEST_AWS_ACCESS_KEY_ID},
+    aws_secret_access_key => $ENV{TEST_AWS_SECRET_ACCESS_KEY},
+    secure => 1,
+);
+my $bucket = $ENV{TEST_S3_BUCKET} || ('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'. time);
+
+{
+    my $res = $s3->list_objects( $bucket, {
+        'max-keys' => 0,
+    });
+    if ( $res ) {
+        plan skip_all => "Bucket $bucket is already exists";
+    }
+}
+
+{
+    ok $s3->create_bucket( $bucket ), 'create_bucket';
+    my $res = $s3->list_objects( $bucket );
+    is $res->{name}, $bucket, 'list_objects';
+    ok !@{$res->{contents}}, 'no objects';
+}
+
+{
+    my $str = time;
+    ok $s3->create_object($bucket, 'foo.txt', $str, +{
+        'x-amz-meta-foo' => 'bar',
+        content_type => 'text/plain',
+    }), 'create_object with meta data';
+
+    my $res = $s3->get_object($bucket, 'foo.txt');
+    ok $res, 'get_object';
+    is $res->{content}, $str, 'content';
+    is $res->{content_type}, 'text/plain', 'content_type';
+    is $res->{content_length}, length($str), 'content_length';
+    is $res->{'x-amz-meta-foo'}, 'bar', 'meta data';
+}
+
+{
+    my $res = $s3->head_object( $bucket, 'foo.txt' );
+    is $res->{'x-amz-meta-foo'}, 'bar', 'head_object';
+}
+
+{
+    open my $fh, './t/TEST.txt';
+    ok $s3->create_object($bucket, 'TEST.txt', $fh), 'create_object from FileHandle';
+    close $fh;
+    my $res = $s3->get_object($bucket, 'TEST.txt');
+    like $res->{content}, qr/^TEST_DOCUMENT/, 'get_object';
+}
+
+# get_object and writ_code
+{
+    my $content;
+    my $res = $s3->get_object($bucket, 'TEST.txt', {}, {
+        write_code => sub {
+            my( $code, $message, $headers, $buf ) = @_;
+            is $code, 200, 'write_code callback';
+            $content .= $buf;
+        },
+    });
+    is $res->{content}, undef, 'get_object response with write_code';
+    like $res->{etag}, qr/^[a-f0-9]{32}$/, 'etag';
+    like $content, qr/^TEST_DOCUMENT/, 'write_code callback';
+}
+
+# create_object_from_file
+{
+    ok $s3->create_object_from_file($bucket, 'test.jpg', './t/test.jpg'), 'create_object_from_file';
+    my $res = $s3->get_object($bucket, 'test.jpg');
+    is $res->{content_type}, 'image/jpeg';
+}
+
+
+{
+    my $filename = './t/download.txt';
+    ok $s3->get_object_to_file( $bucket, 'TEST.txt', $filename ), 'get_object_to_file';
+    local $/ = undef;
+    open my $fh, '<', $filename;
+    my $content = <$fh>;
+    close $fh;
+    like $content, qr/^TEST_DOCUMENT/, 'get_object_to_file ';
+    unlink $filename;
+}
+
+
+{
+    # can not delete.
+    ok !$s3->delete_bucket( $bucket );
+    isa_ok $s3->error, 'Furl::S3::Error';
+    $s3->clear_error;
+    ok !$s3->error, 'clear_error';
+}
+
+{
+    my $res = $s3->list_objects( $bucket );
+    is @{$res->{contents}}, 3;
+    for my $obj(@{$res->{contents}}) {
+        like $obj->{etag}, qr/^[a-f0-9]{32}$/, 'etag';
+        like $obj->{key}, qr/^(foo\.txt|TEST\.txt|test\.jpg)$/, 'check objects';
+        # XXX Furl's BUG?
+        #$s3->delete_object( $bucket, $obj->{key} );
+    }
+}
+
+# XXX Furl's BUG?
+#ok $s3->delete_bucket( $bucket );
+
+
+done_testing();
