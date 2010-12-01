@@ -15,6 +15,11 @@ my $s3 = Furl::S3->new(
 my $bucket = $ENV{TEST_S3_BUCKET} || ('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'. time);
 
 {
+    my $res = $s3->list_buckets;
+    ok $res->{owner}{id}, 'list_buckets';
+}
+
+{
     my $res = $s3->list_objects( $bucket, {
         'max-keys' => 0,
     });
