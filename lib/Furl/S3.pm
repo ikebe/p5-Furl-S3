@@ -126,7 +126,7 @@ sub request {
     my $self = shift;
     my( $method, $bucket, $key, $params, $headers, $furl_options ) = @_;
     validate_pos( @_, 1, 1, 0, 
-                  { type => HASHREF | UNDEF , optional => 1, }, 
+                  { type => HASHREF | UNDEF | SCALAR , optional => 1, }, 
                   { type => HASHREF | UNDEF , optional => 1, },
                   { type => HASHREF | UNDEF , optional => 1, }, );
 
@@ -141,6 +141,7 @@ sub request {
     }
     $h{'date'} ||= time2str(time);
     my $path_query = $self->_path_query(join('/', $bucket, $key), $params);
+    $path_query =~ s{//}{/};
     my $string_to_sign = 
         $self->_string_to_sign( $method, $path_query, \%h );
     my $signed_string = $self->_sign( $string_to_sign );
