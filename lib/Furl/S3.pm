@@ -514,6 +514,38 @@ other parmeters are passed to Furl->new. see L<Furl> documents.
 
 =back
 
+=head2 request($method, $bucket, [ $key ], [ \%params ], [ \%headers ], [ \%furl_options ]);
+
+sends signed request. returns a Furl::Response object.
+
+=over
+
+=item $method
+
+HTTP Request Method.
+
+=item $bucket
+
+bucket name.
+
+=item $key
+
+key of object.
+
+=item \%params
+
+request parameters.
+
+=item \%headers
+
+HTTP headers.
+
+=item \%furl_options
+
+arguments of $furl->request.
+
+=back
+
 =head2 list_buckets
 
 list all buckets.
