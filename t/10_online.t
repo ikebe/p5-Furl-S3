@@ -10,7 +10,7 @@ unless ( $ENV{TEST_AWS_ACCESS_KEY_ID} && $ENV{TEST_AWS_SECRET_ACCESS_KEY} ) {
 my $s3 = Furl::S3->new(
     aws_access_key_id => $ENV{TEST_AWS_ACCESS_KEY_ID},
     aws_secret_access_key => $ENV{TEST_AWS_SECRET_ACCESS_KEY},
-    secure => 1,
+    secure => 0,
 );
 my $bucket = $ENV{TEST_S3_BUCKET} || ('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'. time);
 
@@ -102,23 +102,21 @@ my $bucket = $ENV{TEST_S3_BUCKET} || ('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'
     # can not delete.
     ok !$s3->delete_bucket( $bucket );
     isa_ok $s3->error, 'Furl::S3::Error';
-    $s3->clear_error;
-    ok !$s3->error, 'clear_error';
 }
 
 {
     my $res = $s3->list_objects( $bucket );
+    ok !$s3->error, 'clear_error';
     is @{$res->{contents}}, 3;
     for my $obj(@{$res->{contents}}) {
         like $obj->{etag}, qr/^[a-f0-9]{32}$/, 'etag';
         like $obj->{key}, qr/^(foo\.txt|TEST\.txt|test\.jpg)$/, 'check objects';
-        # XXX Furl's BUG?
-        #$s3->delete_object( $bucket, $obj->{key} );
+        $s3->delete_object( $bucket, $obj->{key} );
     }
 }
 
 # XXX Furl's BUG?
-#ok $s3->delete_bucket( $bucket );
+ok $s3->delete_bucket( $bucket );
 
 
 done_testing();
