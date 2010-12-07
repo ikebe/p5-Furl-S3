@@ -4,7 +4,7 @@ use Test::More;
 use Furl::S3;
 
 unless ( $ENV{TEST_AWS_ACCESS_KEY_ID} && $ENV{TEST_AWS_SECRET_ACCESS_KEY} ) {
-    plan skip_all => 'network tests are skipped';
+    plan skip_all => 'online tests are skipped';
 }
 
 my $s3 = Furl::S3->new(

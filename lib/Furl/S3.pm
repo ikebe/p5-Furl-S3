@@ -72,7 +72,7 @@ sub _boolean {
     return 1;
 }
 
-sub _string_to_sign {
+sub string_to_sign {
     my( $self, $method, $resource, $headers ) = @_;
     $headers ||= {};
     my %headers_to_sign;
@@ -105,11 +105,11 @@ sub _string_to_sign {
     $str;
 }
 
-sub _sign {
+sub sign {
     my( $self, $str ) = @_;
     my $hmac = Digest::HMAC_SHA1->new( $self->aws_secret_access_key );
     $hmac->add( $str );
-    encode_base64( $hmac->digest );
+    encode_base64( $hmac->digest, '' );
 }
 
 sub _path_query {
@@ -125,15 +125,17 @@ sub _path_query {
 sub request {
     my $self = shift;
     my( $method, $bucket, $key, $params, $headers, $furl_options ) = @_;
-    validate_pos( @_, 1, 1, 0, 
+    validate_pos( @_, 1, 1, 
+                  { type => SCALAR | UNDEF, optional => 1 },
                   { type => HASHREF | UNDEF | SCALAR , optional => 1, }, 
                   { type => HASHREF | UNDEF , optional => 1, },
                   { type => HASHREF | UNDEF , optional => 1, }, );
-
+    $self->clear_error;
     $key ||= '';
     $params ||= +{};
     $headers ||= +{};
     $furl_options ||= +{};
+
     my %h;
     while (my($key, $val) = each %{$headers}) {
         $key =~ s/_/-/g; # content_type => content-type
@@ -143,8 +145,8 @@ sub request {
     my $path_query = $self->_path_query(join('/', $bucket, $key), $params);
     $path_query =~ s{//}{/};
     my $string_to_sign = 
-        $self->_string_to_sign( $method, $path_query, \%h );
-    my $signed_string = $self->_sign( $string_to_sign );
+        $self->string_to_sign( $method, $path_query, \%h );
+    my $signed_string = $self->sign( $string_to_sign );
     my $auth_header = 'AWS '. $self->aws_access_key_id. ':'. $signed_string;
     $h{'authorization'} = $auth_header;
     my @h = %h;
