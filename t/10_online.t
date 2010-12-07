@@ -2,6 +2,7 @@
 use strict;
 use Test::More;
 use Furl::S3;
+use Furl;
 
 unless ( $ENV{TEST_AWS_ACCESS_KEY_ID} && $ENV{TEST_AWS_SECRET_ACCESS_KEY} ) {
     plan skip_all => 'online tests are skipped';
@@ -12,7 +13,7 @@ my $s3 = Furl::S3->new(
     aws_secret_access_key => $ENV{TEST_AWS_SECRET_ACCESS_KEY},
     secure => 0,
 );
-my $bucket = $ENV{TEST_S3_BUCKET} || ('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'. time);
+my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'. time);
 
 {
     my $res = $s3->list_buckets;
@@ -48,6 +49,19 @@ my $bucket = $ENV{TEST_S3_BUCKET} || ('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'
     is $res->{content_type}, 'text/plain', 'content_type';
     is $res->{content_length}, length($str), 'content_length';
     is $res->{'x-amz-meta-foo'}, 'bar', 'meta data';
+
+    my $signed_url = $s3->signed_url( $bucket, 'foo.txt', time + 5 );
+    my $furl = Furl->new;
+    my $res = $furl->get( $signed_url );
+    is $res->code, '200', 'get signed url. ok';
+    is $res->content, $str, 'get signed url';;
+
+    # expired request.
+    sleep 6;
+    {
+        my $res = $furl->get( $signed_url );
+        is $res->code, '403', 'get signed url. forbidden';
+    }
 }
 
 {

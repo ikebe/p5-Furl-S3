@@ -12,6 +12,7 @@ use XML::LibXML;
 use XML::LibXML::XPathContext;
 use Furl::S3::Error;
 use Params::Validate qw(:types validate_with validate_pos);
+use URI::Escape qw(uri_escape);
 use Carp ();
 
 Class::Accessor::Lite->mk_accessors(qw(aws_access_key_id aws_secret_access_key secure furl endpoint));
@@ -72,30 +73,51 @@ sub _boolean {
     return 1;
 }
 
+# http://docs.amazonwebservices.com/AmazonS3/2006-03-01/dev/index.html?BucketRestrictions.html
+sub validate_bucket {
+    my $bucket = shift;
+    return 
+        ($bucket =~ qr/^[a-z0-9][a-z0-9\._-]{2,254}$/) && 
+            ($bucket !~ /^\d+\.\d+\.\d+\.\d+$/); # IP Address
+}
+
+sub is_dns_style {
+    my $bucket = shift;
+    return unless validate_bucket( $bucket );
+    return if $bucket =~ /_/;
+    return if length($bucket) < 3 || length($bucket) > 63;
+    return if $bucket =~ /\.\./;
+    my @parts = split /\./, $bucket;
+    for my $p(@parts) {
+        return if $p =~ /-$/
+    }
+    return 1;
+}
+
 sub string_to_sign {
     my( $self, $method, $resource, $headers ) = @_;
     $headers ||= {};
     my %headers_to_sign;
     while (my($k, $v) = each %{$headers}) {
         my $key = lc $k;
-        if ( $key =~ /^(content-md5|content-type|date)$/ or 
+        if ( $key =~ /^(content-md5|content-type|date|expires)$/ or 
                  $key =~ /^x-amz-/ ) {
             $headers_to_sign{$key} = _trim($v);
         }
     }
     my $str = "$method\n";
-    $str .= delete($headers_to_sign{'content-md5'}) || '';
+    $str .= $headers_to_sign{'content-md5'} || '';
     $str .= "\n";
-    $str .= delete($headers_to_sign{'content-type'}) || '';
+    $str .= $headers_to_sign{'content-type'} || '';
     $str .= "\n";
-    $str .= delete($headers_to_sign{'date'}) || '';
+    $str .= $headers_to_sign{'expires'} || $headers_to_sign{'date'} || '';
     $str .= "\n";
-    for my $key( sort keys %headers_to_sign ) {
+    for my $key( sort grep { /^x-amz-/ } keys %headers_to_sign ) {
         $str .= "$key:$headers_to_sign{$key}\n";
     }
     my( $path, $query ) = split /\?/, $resource;
     # sub-resource.
-    if ( $query && $query =~ m{^(acl|policy|location|versions)$}) {
+    if ( $query && $query =~ m{^(acl|policy|location|versions)$} ) {
         $str .= $resource;
     }
     else {
@@ -112,15 +134,43 @@ sub sign {
     encode_base64( $hmac->digest, '' );
 }
 
+sub resource {
+    my( $self, $bucket, $key, $subresource ) = @_;
+    my $resource = $bucket;
+    $resource = '/'. $resource unless $resource =~ m{^/};
+    if ( defined $key ) {
+        $resource = join '/', $resource, $key;
+    }
+    if ( $subresource ) {
+        $resource .= '?'. $subresource;
+    }
+    $resource =~ s{//}{/}g;
+    $resource;
+}
+
 sub _path_query {
     my( $self, $path, $q ) = @_;
     $path = '/'. $path unless $path =~ m{^/};
     my $qs = ref($q) eq 'HASH' ? 
-        join('&', map { $_. '='. $q->{$_} } keys %{$q}) : $q;
+        join('&', map { $_. '='. uri_escape( $q->{$_} ) } keys %{$q}) : $q;
     $path .= '?'. $qs if $qs;
     $path;
 }
 
+sub host_and_path_query {
+    my( $self, $bucket, $key, $params ) = @_;
+    my($host, $path_query);
+    if ( is_dns_style($bucket) ) {
+        $host = join '.', $bucket, $self->endpoint;
+        $path_query = $self->_path_query( $key, $params );
+    }
+    else {
+        $host = $self->endpoint;
+        $path_query = $self->_path_query( join('/', $bucket, $key), $params );
+    }
+    $path_query =~ s{//}{/}g;
+    return ($host, $path_query);
+}
 
 sub request {
     my $self = shift;
@@ -141,24 +191,46 @@ sub request {
         $key =~ s/_/-/g; # content_type => content-type
         $h{lc($key)} = $val
     }
-    $h{'date'} ||= time2str(time);
-    my $path_query = $self->_path_query(join('/', $bucket, $key), $params);
-    $path_query =~ s{//}{/};
+    if ( !$h{'expires'} && !$h{'date'} ) {
+        $h{'date'} = time2str(time);
+    }
+    my $resource = $self->resource( $bucket, $key );
     my $string_to_sign = 
-        $self->string_to_sign( $method, $path_query, \%h );
+        $self->string_to_sign( $method, $resource, \%h );
     my $signed_string = $self->sign( $string_to_sign );
     my $auth_header = 'AWS '. $self->aws_access_key_id. ':'. $signed_string;
     $h{'authorization'} = $auth_header;
+
+    my( $host, $path_query ) = 
+        $self->host_and_path_query( $bucket, $key, $params );
     my @h = %h;
     $self->furl->request(
         method => $method,
         scheme => ($self->secure ? 'https' : 'http'),
-        host => $self->endpoint,
+        host => $host,
         path_query => $path_query,
         headers => \@h,
         %{$furl_options},
     );
 }
+
+sub signed_url {
+    my $self = shift;
+    validate_pos(@_, 1, 1, +{ regexp => qr/^\d+$/, });
+    my( $bucket, $key, $expires ) = @_;
+    my $resource = $self->resource( $bucket, $key );
+    my $string_to_sign = $self->string_to_sign('GET', $resource, +{
+        expires => $expires,
+    });
+    my $sig = $self->sign( $string_to_sign );
+    my($host, $path_query) = $self->host_and_path_query( $bucket, $key, +{
+        AWSAccessKeyId => $self->aws_access_key_id,
+        Expires => $expires,
+        Signature => $sig,
+    } );
+    sprintf '%s://%s%s', ($self->secure ? 'https' : 'http'), $host, $path_query;
+}
+
 
 sub _create_xpc {
     my( $self, $string ) = @_;
@@ -197,7 +269,9 @@ sub list_buckets {
 sub create_bucket {
     my $self = shift;
     my( $bucket, $headers ) = @_;
-    validate_pos( @_, 1,  
+    validate_pos( @_, 
+                  { type => SCALAR, 
+                    callbacks => { bucket_name => \&validate_bucket } },
                   { type => HASHREF, optional => 1, } );
 
     my $res = $self->request( 'PUT', $bucket, undef, undef, $headers );
