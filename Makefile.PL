@@ -7,7 +7,7 @@ all_from 'lib/Furl/S3.pm';
 
 # requires '';
 
-requires 'Furl' => '0.17';
+requires 'Furl' => '0.18';
 requires 'Class::Accessor::Lite';
 requires 'Digest::HMAC_SHA1';
 requires 'MIME::Base64';
@@ -16,7 +16,7 @@ requires 'XML::LibXML';
 requires 'XML::LibXML::XPathContext';
 requires 'Params::Validate';
 requires 'File::Type';
-requries 'URI::Escape';
+requires 'URI::Escape';
 
 tests 't/*.t';
 author_tests 'xt';

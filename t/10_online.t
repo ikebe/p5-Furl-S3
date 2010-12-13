@@ -52,9 +52,12 @@ my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '
 
     my $signed_url = $s3->signed_url( $bucket, 'foo.txt', time + 5 );
     my $furl = Furl->new;
-    my $res = $furl->get( $signed_url );
-    is $res->code, '200', 'get signed url. ok';
-    is $res->content, $str, 'get signed url';;
+
+    {
+        my $res = $furl->get( $signed_url );
+        is $res->code, '200', 'get signed url. ok';
+        is $res->content, $str, 'get signed url';;
+    }
 
     # expired request.
     sleep 6;
