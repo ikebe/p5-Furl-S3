@@ -7,12 +7,12 @@ use overload q{""} => \&stringify;
 Class::Accessor::Lite->mk_accessors(qw(code http_code http_status message request_id host_id));
 
 sub new {
-    my( $class, $res, $xml ) = @_;
+    my( $class, $res ) = @_;
     my $self = bless {
-        http_code => $res->code,
-        http_status => $res->message,
+        http_code => $res->{code},
+        http_status => $res->{msg},
     }, $class;
-    if ( $xml ) {
+    if ( my $xml = $res->{body} ) {
         $self->_parse_xml( $xml );
     }
     $self;

@@ -119,6 +119,7 @@ my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '
     # can not delete.
     ok !$s3->delete_bucket( $bucket );
     isa_ok $s3->error, 'Furl::S3::Error';
+    is $s3->error->http_code, 409, 'Conflict';
 }
 
 {
@@ -132,7 +133,6 @@ my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '
     }
 }
 
-# XXX Furl's BUG?
 ok $s3->delete_bucket( $bucket );
 
 
