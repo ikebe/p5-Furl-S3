@@ -12,12 +12,12 @@ use XML::LibXML;
 use XML::LibXML::XPathContext;
 use Furl::S3::Error;
 use Params::Validate qw(:types validate_with validate_pos);
-use URI::Escape qw(uri_escape);
+use URI::Escape qw(uri_escape_utf8);
 use Carp ();
 
 Class::Accessor::Lite->mk_accessors(qw(aws_access_key_id aws_secret_access_key secure furl endpoint));
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 our $DEFAULT_ENDPOINT = 's3.amazonaws.com';
 our $XMLNS = 'http://s3.amazonaws.com/doc/2006-03-01/';
 
@@ -140,6 +140,7 @@ sub resource {
     my $resource = $bucket;
     $resource = '/'. $resource unless $resource =~ m{^/};
     if ( defined $key ) {
+        $key = _normalize_key($key);
         $resource = join '/', $resource, $key;
     }
     if ( $subresource ) {
@@ -153,7 +154,7 @@ sub _path_query {
     my( $self, $path, $q ) = @_;
     $path = '/'. $path unless $path =~ m{^/};
     my $qs = ref($q) eq 'HASH' ? 
-        join('&', map { $_. '='. uri_escape( $q->{$_} ) } keys %{$q}) : $q;
+        join('&', map { $_. '='. uri_escape_utf8( $q->{$_} ) } keys %{$q}) : $q;
     $path .= '?'. $qs if $qs;
     $path;
 }
@@ -161,6 +162,7 @@ sub _path_query {
 sub host_and_path_query {
     my( $self, $bucket, $key, $params ) = @_;
     my($host, $path_query);
+    $key = _normalize_key($key);
     if ( is_dns_style($bucket) ) {
         $host = join '.', $bucket, $self->endpoint;
         $path_query = $self->_path_query( $key, $params );
@@ -372,6 +374,21 @@ sub create_object_from_file {
     $self->create_object( $bucket, $key, $fh, $headers )
 }
 
+sub copy_object {
+    my $self = shift;
+    my( $source_bucket, $source_key, $dest_bucket, $dest_key, $headers ) = @_;
+    validate_pos( @_, 
+                  1, 1, 1, 
+                  { type => SCALAR | UNDEF, optional => 1 },
+                  { type => HASHREF, optional => 1} );
+    $headers ||= +{};
+    my $source = $self->resource( $source_bucket, $source_key );
+    $self->create_object( $dest_bucket, $dest_key, '', {
+        %{$headers},
+        'x-amz-copy-source' => $source,
+    });
+}
+
 sub _normalize_response {
     my( $self, $res, $is_head ) = @_;
     my %res;
@@ -453,10 +470,18 @@ sub error {
     $self->{_error};
 }
 
+sub _normalize_key {
+    my $key = shift;
+    join '/', map { _uri_escape($_) } split /\//, $key;
+}
+
 sub _http_is_success {
     $_[0] >= 200 && $_[0] < 300;
 }
 
+sub _uri_escape {
+    uri_escape_utf8($_[0], '^A-Za-z0-9\._-');
+}
 1;
 
 
@@ -682,9 +707,14 @@ returns a HASH-REF
 delete object.
 returns a boolean value.
 
+=head2 copy_object($source_bucket, $source_key, $dest_bucket, $dest_key, [ \%headers ]);
+
+copy object.
+return a boolean value.
+
 =head1 AUTHOR
 
-Tomohiro Ikebe E<lt>ikebe {at} livedoor.jpE<gt>
+Tomohiro Ikebe E<lt>ikebe {at} shebang.jpE<gt>
 
 =head1 SEE ALSO
 

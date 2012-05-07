@@ -133,6 +133,34 @@ my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '
     }
 }
 
+# multi-byte
+{
+    use utf8;
+    my $str = time;
+    my $key = 'ほげ/ほげ ほげ.txt';
+    ok $s3->create_object($bucket, $key, $str, +{
+        content_type => 'text/plain',
+    }), 'create_object multi-byte key name';
+
+    my $res = $s3->get_object($bucket, $key);
+    ok $res, 'get_object';
+    is $res->{content}, $str, 'content';
+    is $res->{content_type}, 'text/plain', 'content_type';
+    is $res->{content_length}, length($str), 'content_length';
+
+
+    my $key2 = 'あいうえお.txt';
+    ok $s3->copy_object( $bucket, $key, $bucket, $key2 ), 'copy_object';
+    ok $s3->delete_object( $bucket, $key ), 'delete old file';
+
+    $res = $s3->get_object($bucket, $key2);
+    ok $res, 'get_object';
+    is $res->{content}, $str, 'content';
+
+    $s3->delete_object( $bucket, $key2 );
+}
+
+
 ok $s3->delete_bucket( $bucket );
 
 

@@ -29,7 +29,7 @@ my $s3 = Furl::S3->new(
 
 {
     my $date = time2str( time );
-    my $resource = '/foo/bar.txt';
+    my $resource = '/foo/bar-baz.txt';
     # encode_base64(md5('hoge'));
     my $md5 = '6nA+eqHv2gBk6qUH2eirfg==';
     my $content_type = 'text/plain';
@@ -66,11 +66,11 @@ my $s3 = Furl::S3->new(
 
 {
     my $expires = time + 10;
-    my $string_to_sign = $s3->string_to_sign('GET', '/foo/bar.txt', {
+    my $string_to_sign = $s3->string_to_sign('GET', '/foo/bar-baz.txt', {
         expires => $expires,
     });
     my $sig = uri_escape( $s3->sign( $string_to_sign ) );
-    my $url = $s3->signed_url('foo', 'bar.txt', $expires);
+    my $url = $s3->signed_url('foo', 'bar-baz.txt', $expires);
     like $url, qr/Expires=$expires/;
     like $url, qr/foo\.s3.amazonaws\.com/;
     like $url, qr/Signature=$sig/;
