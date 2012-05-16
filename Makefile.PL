@@ -7,7 +7,7 @@ all_from 'lib/Furl/S3.pm';
 
 # requires '';
 
-requires 'Furl' => '0.18';
+requires 'Furl' => '0.38';
 requires 'Class::Accessor::Lite';
 requires 'Digest::HMAC_SHA1';
 requires 'MIME::Base64';
