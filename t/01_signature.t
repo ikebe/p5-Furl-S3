@@ -48,6 +48,27 @@ my $s3 = Furl::S3->new(
         "x-amz-acl:public-read\n". 
         $resource;
     is $string_to_sign, $expected, 'PUT';
+
+    {
+        # PUT and expires header
+        my $expires = time2str( time  + 86400 );
+        my $string_to_sign = $s3->string_to_sign('PUT', $resource, {
+            'content-type' => $content_type,
+            'content-md5' => $md5,
+            'x-amz-acl' => 'public-read',
+            date => $date,
+            expires => $expires,
+        });
+
+        my $expected = 
+            "PUT\n". 
+            "$md5\n". 
+            "$content_type\n". 
+            "$date\n". 
+            "x-amz-acl:public-read\n". 
+            $resource;
+        is $string_to_sign, $expected, 'PUT';
+    }
 }
 
 {
