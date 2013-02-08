@@ -101,6 +101,7 @@ sub string_to_sign {
     my %headers_to_sign;
     while (my($k, $v) = each %{$headers}) {
         my $key = lc $k;
+        next if $method ne 'GET' && $key eq 'expires';
         if ( $key =~ /^(content-md5|content-type|date|expires)$/ or 
                  $key =~ /^x-amz-/ ) {
             $headers_to_sign{$key} = _trim($v);
@@ -194,7 +195,7 @@ sub request {
         $key =~ s/_/-/g; # content_type => content-type
         $h{lc($key)} = $val
     }
-    if ( !$h{'expires'} && !$h{'date'} ) {
+    if ( !$h{'date'} ) {
         $h{'date'} = time2str(time);
     }
     my $resource = $self->resource( $bucket, $key );
