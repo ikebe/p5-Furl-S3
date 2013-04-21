@@ -11,6 +11,7 @@ unless ( $ENV{TEST_AWS_ACCESS_KEY_ID} && $ENV{TEST_AWS_SECRET_ACCESS_KEY} ) {
 my $s3 = Furl::S3->new(
     aws_access_key_id => $ENV{TEST_AWS_ACCESS_KEY_ID},
     aws_secret_access_key => $ENV{TEST_AWS_SECRET_ACCESS_KEY},
+    endpoint => $ENV{TEST_S3_ENDPOINT} || $Furl::S3::DEFAULT_ENDPOINT,
     secure => 0,
 );
 my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'. time);

@@ -96,7 +96,8 @@ sub is_dns_style {
 }
 
 sub string_to_sign {
-    my( $self, $method, $resource, $headers ) = @_;
+    my( $self, $method, $resource, $params, $headers ) = @_;
+    $params  ||= {};
     $headers ||= {};
     my %headers_to_sign;
     while (my($k, $v) = each %{$headers}) {
@@ -118,8 +119,14 @@ sub string_to_sign {
     }
     my( $path, $query ) = split /\?/, $resource;
     # sub-resource.
-    if ( $query && $query =~ m{^(acl|policy|location|versions)$} ) {
+    if ( $query && $query =~ m{^(acl|policy|location|uploads|versions)$} ) {
         $str .= $resource;
+    }
+    elsif (exists $params->{uploadId} && exists $params->{partNumber}) {
+        $str .= sprintf "$path?partNumber=%s&uploadId=%s", $params->{partNumber}, $params->{uploadId};
+    }
+    elsif (exists $params->{uploadId}) {
+        $str .= sprintf "$path?uploadId=%s", $params->{uploadId};
     }
     else {
         $str .= $path;
@@ -177,12 +184,13 @@ sub host_and_path_query {
 
 sub request {
     my $self = shift;
-    my( $method, $bucket, $key, $params, $headers, $furl_options ) = @_;
+    my( $method, $bucket, $key, $params, $headers, $furl_options, $subresource ) = @_;
     validate_pos( @_, 1, 1, 
                   { type => SCALAR | UNDEF, optional => 1 },
                   { type => HASHREF | UNDEF | SCALAR , optional => 1, }, 
                   { type => HASHREF | UNDEF , optional => 1, },
-                  { type => HASHREF | UNDEF , optional => 1, }, );
+                  { type => HASHREF | UNDEF , optional => 1, },
+                  { type => SCALAR | UNDEF, optional => 1 } );
     $self->clear_error;
     $key ||= '';
     $params ||= +{};
@@ -197,17 +205,19 @@ sub request {
     if ( !$h{'expires'} && !$h{'date'} ) {
         $h{'date'} = time2str(time);
     }
-    my $resource = $self->resource( $bucket, $key );
+    my $resource = $self->resource( $bucket, $key, $subresource );
     my $string_to_sign = 
-        $self->string_to_sign( $method, $resource, \%h );
+        $self->string_to_sign( $method, $resource, $params, \%h );
     my $signed_string = $self->sign( $string_to_sign );
     my $auth_header = 'AWS '. $self->aws_access_key_id. ':'. $signed_string;
     $h{'authorization'} = $auth_header;
 
     my( $host, $path_query ) = 
         $self->host_and_path_query( $bucket, $key, $params );
+    $path_query .= "?$subresource" if defined $subresource;
     my %res;
     my @h = %h;
+
     @res{qw(ver code msg headers body)} = $self->furl->request(
         method => $method,
         scheme => ($self->secure ? 'https' : 'http'),
@@ -224,7 +234,7 @@ sub signed_url {
     validate_pos(@_, 1, 1, +{ regexp => qr/^\d+$/, });
     my( $bucket, $key, $expires ) = @_;
     my $resource = $self->resource( $bucket, $key );
-    my $string_to_sign = $self->string_to_sign('GET', $resource, +{
+    my $string_to_sign = $self->string_to_sign('GET', $resource, undef, +{
         expires => $expires,
     });
     my $sig = $self->sign( $string_to_sign );
@@ -389,6 +399,66 @@ sub copy_object {
     });
 }
 
+sub initiate_multipart_upload {
+
+    my $self = shift;
+    my( $bucket, $key, $headers ) = @_;
+    validate_pos( @_, 1, 1, 
+                  { type => HASHREF, optional => 1 } );
+    $headers ||= +{};
+    my $subresource = "uploads";
+    my $res = $self->request( 'POST', $bucket, $key, undef, undef, undef, $subresource );
+    unless ( _http_is_success($res->{code}) ) {
+        return $self->error( $res );
+    }
+    my $xpc = $self->_create_xpc( $res->{body} );
+    return $xpc->findvalue("/s3:InitiateMultipartUploadResult/s3:UploadId");
+}
+
+sub upload_part {
+
+    my $self = shift;
+    my( $bucket, $key, $part_content, $params, $headers ) = @_;
+    validate_pos( @_, 1, 1, 1,
+                  { type => HASHREF },
+                  { type => HASHREF, optional => 1 } );
+
+    $headers ||= +{};
+    $headers->{'Content-Length'} = length $part_content if !exists $headers->{'Content-Length'};
+    
+    my $furl_options = +{ content => $part_content };
+
+    my $res = $self->request( 'PUT', $bucket, $key, $params, $headers, $furl_options );
+    unless ( _http_is_success($res->{code}) ) {
+        return $self->error( $res );
+    }
+    return $self->_normalize_response( $res )->{etag};
+}
+
+sub complete_multipart_upload {
+
+    my $self = shift;
+    my( $bucket, $key, $part_numbers, $etags, $params, $headers ) = @_;
+    validate_pos( @_, 1, 1,
+                  { type => ARRAYREF },
+                  { type => ARRAYREF },
+                  { type => HASHREF },
+                  { type => HASHREF, optional => 1 } );
+    $headers ||= +{};
+
+    my $last    = scalar @{$part_numbers} - 1;
+    my $content = "<CompleteMultipartUpload>";
+    $content .= join '', map { sprintf '<Part><PartNumber>%s</PartNumber><ETag>%s</ETag></Part>', $part_numbers->[$_], $etags->[$_] } 0..$last;
+    $content .= "</CompleteMultipartUpload>";
+    my $furl_options = +{ content => $content };
+
+    my $res = $self->request( 'POST', $bucket, $key, $params, $headers, $furl_options );
+    unless ( _http_is_success($res->{code}) ) {
+        return $self->error( $res );
+    }
+    return 1;
+}
+
 sub _normalize_response {
     my( $self, $res, $is_head ) = @_;
     my %res;
@@ -546,7 +616,7 @@ other parmeters are passed to Furl->new. see L<Furl> documents.
 
 =back
 
-=head2 request($method, $bucket, [ $key ], [ \%params ], [ \%headers ], [ \%furl_options ]);
+=head2 request($method, $bucket, [ $key ], [ \%params ], [ \%headers ], [ \%furl_options ], [ $subresource ]);
 
 sends signed request. returns a Furl::Response object.
 
@@ -575,6 +645,10 @@ HTTP headers.
 =item \%furl_options
 
 arguments of $furl->request.
+
+=item $subresource
+
+sub-resource of object.
 
 =back
 
@@ -711,6 +785,60 @@ returns a boolean value.
 
 copy object.
 return a boolean value.
+
+=head2 initiate_multipart_upload($bucket, $key, [ \%headers ]);
+
+initialize large size object support.
+return a uploadId string value.
+
+  # example
+  UGJI_4BLQUK-muCCxVDm-w==
+
+=head2 upload_part($bucket, $key, $part_content, $params [ \%headers ]);
+
+upload part of large size object.
+return a etag string value.
+
+  # example
+  5e5563a0388a9dac86270ef14a23954b
+
+=head2 complete_multipart_upload($bucket, $key, $part_numbers, $etags, $params [ \%headers ]);
+
+complete large size object.
+returns a boolean value.
+
+initiate_multipart_upload, upload_part and complete_multipart_upload sample
+
+  #!/usr/bin/env perl
+  
+  use strict;
+  use feature qw(say);
+  use Furl::S3;
+  
+  my $aws_access_key_id     = "your aws access key";
+  my $aws_secret_access_key = "your aws secret access key";
+
+  my $s3 = Furl::S3->new(
+                   aws_access_key_id     => $aws_access_key_id,
+                   aws_secret_access_key => $aws_secret_access_key,
+                  );
+  
+  my $chunk_size = 5_242_880;
+  my $bucket = "your bucket";
+  my $key = "large_file";
+  my $upload_id = $s3->initiate_multipart_upload($bucket, $key);
+  
+  my $i = 1;
+  my(@part_numbers, @etags);
+  open my $fh, "<", $key or die $!;
+  while (read $fh, my $buffer, $chunk_size) {
+      my $etag = $s3->upload_part($bucket, $key, $buffer, { uploadId => $upload_id, partNumber => $i });
+      push @part_numbers, $i;
+      push @etags, $etag;
+      $i++;
+  }
+  close $fh;
+  $s3->complete_multipart_upload($bucket, $key, \@part_numbers, \@etags, { uploadId => $upload_id });
 
 =head1 AUTHOR
 
