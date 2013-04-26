@@ -1,9 +1,10 @@
 Revision history for Perl extension Furl::S3
 
+0.02_02 Fri Apr 26 15:14:09 JST 2013
+        - added find_or_create_bucket method
+
 0.02_01 Mon Apr 22 01:03:01 2013 +0900
         - added initiate_multipart_upload, upload_part, complete_multipart_upload methods
-
-
 0.02
         - use Furl::HTTP
         - handle utf-8 string correctly
