@@ -30,11 +30,17 @@ my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '
     }
 }
 
+
 {
     ok $s3->create_bucket( $bucket ), 'create_bucket';
     my $res = $s3->list_objects( $bucket );
     is $res->{name}, $bucket, 'list_objects';
     ok !@{$res->{contents}}, 'no objects';
+}
+
+{
+    my $res = $s3->find_or_create_bucket($bucket);
+    is $res->{name}, $bucket, 'find_or_create_bucket';
 }
 
 {

@@ -1,6 +1,8 @@
 cover_db
 META.yml
 META.json
+MYMETA.yml
+MYMETA.json
 Makefile
 blib
 inc

@@ -296,6 +296,25 @@ sub create_bucket {
     return 1;
 }
 
+sub find_or_create_bucket {
+
+    my $self = shift;
+    my( $bucket, $headers ) = @_;
+    validate_pos( @_, 
+                  { type => SCALAR, 
+                    callbacks => { bucket_name => \&validate_bucket } },
+                  { type => HASHREF, optional => 1, } );
+
+    my $res = $self->list_objects( $bucket, { 'max-keys' => 0 } );
+    if ($res) {
+        return $res;
+	} elsif ($self->error->http_code eq "404") {
+        return $self->create_bucket($bucket, $headers || {});
+    } else {
+        return;
+    }
+}
+
 sub delete_bucket {
     my $self = shift;
     my( $bucket ) = @_;
@@ -679,6 +698,12 @@ returns a HASH-REF
 
 create new bucket.
 returns a boolean value. 
+
+=head2 find_or_create_bucket($bucket, [ \%headers ])
+
+find or create new bucket.
+if your bucket is exists, returns a bucket HASH-REF
+if your bucket is not exists, create new bucket and returns a boolean value. 
 
 =head2 delete_bucket($bucket);
 
