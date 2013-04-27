@@ -457,17 +457,17 @@ sub upload_part {
 sub complete_multipart_upload {
 
     my $self = shift;
-    my( $bucket, $key, $part_numbers, $etags, $params, $headers ) = @_;
+    my( $bucket, $key, $part_number_etag_sets, $params, $headers ) = @_;
     validate_pos( @_, 1, 1,
-                  { type => ARRAYREF },
                   { type => ARRAYREF },
                   { type => HASHREF },
                   { type => HASHREF, optional => 1 } );
     $headers ||= +{};
 
-    my $last    = scalar @{$part_numbers} - 1;
     my $content = "<CompleteMultipartUpload>";
-    $content .= join '', map { sprintf '<Part><PartNumber>%s</PartNumber><ETag>%s</ETag></Part>', $part_numbers->[$_], $etags->[$_] } 0..$last;
+    foreach my $set (@{$part_number_etag_sets}) {
+  	    $content .= sprintf '<Part><PartNumber>%s</PartNumber><ETag>%s</ETag></Part>', $set->{part_number}, $set->{etag};
+    }
     $content .= "</CompleteMultipartUpload>";
     my $furl_options = +{ content => $content };
 
@@ -831,7 +831,7 @@ return a etag string value.
   # example
   5e5563a0388a9dac86270ef14a23954b
 
-=head2 complete_multipart_upload($bucket, $key, $part_numbers, $etags, $params [ \%headers ]);
+=head2 complete_multipart_upload($bucket, $key, $part_number_etag_sets, $params [ \%headers ]);
 
 complete large size object.
 returns a boolean value.
@@ -856,18 +856,17 @@ initiate_multipart_upload, upload_part and complete_multipart_upload sample
   my $bucket = "your bucket";
   my $key = "large_file";
   my $upload_id = $s3->initiate_multipart_upload($bucket, $key);
-  
+   
   my $i = 1;
-  my(@part_numbers, @etags);
+  my @part_number_etag_sets
   open my $fh, "<", $key or die $!;
   while (read $fh, my $buffer, $chunk_size) {
       my $etag = $s3->upload_part($bucket, $key, $buffer, { uploadId => $upload_id, partNumber => $i });
-      push @part_numbers, $i;
-      push @etags, $etag;
+      push @part_number_etag_set, { part_number => $i, etag => $etag };
       $i++;
   }
   close $fh;
-  $s3->complete_multipart_upload($bucket, $key, \@part_numbers, \@etags, { uploadId => $upload_id });
+  $s3->complete_multipart_upload($bucket, $key, \@part_number_etag_sets, { uploadId => $upload_id });
 
 =head1 AUTHOR
 
