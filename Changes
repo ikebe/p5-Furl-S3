@@ -1,5 +1,8 @@
 Revision history for Perl extension Furl::S3
 
+0.02_03 Sat Apr 27 23:52:36 2013 +0900
+        - change method. complete_multipart_upload given value
+
 0.02_02 Fri Apr 26 15:14:09 JST 2013
         - added find_or_create_bucket method
 
