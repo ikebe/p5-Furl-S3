@@ -308,8 +308,9 @@ sub find_or_create_bucket {
     my $res = $self->list_objects( $bucket, { 'max-keys' => 0 } );
     if ($res) {
         return $res;
-	} elsif ($self->error->http_code eq "404") {
-        return $self->create_bucket($bucket, $headers || {});
+    } elsif ($self->error->http_code eq "404") {
+       $self->create_bucket($bucket, $headers || {}) or return;
+        return $self->list_objects( $bucket, { 'max-keys' => 0 } );
     } else {
         return;
     }
@@ -703,7 +704,7 @@ returns a boolean value.
 
 find or create new bucket.
 if your bucket is exists, returns a bucket HASH-REF
-if your bucket is not exists, create new bucket and returns a boolean value. 
+if your bucket is not exists, create new bucket and returns a bucket HASH-REF. 
 
 =head2 delete_bucket($bucket);
 
