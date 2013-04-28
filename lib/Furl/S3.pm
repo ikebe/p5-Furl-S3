@@ -5,9 +5,9 @@ use warnings;
 use Class::Accessor::Lite;
 use Furl::HTTP qw(HEADERS_AS_HASHREF);
 use Digest::HMAC_SHA1;
+use Digest::MD5;
 use MIME::Base64 qw(encode_base64);
 use HTTP::Date;
-use Data::Dumper;
 use XML::LibXML;
 use XML::LibXML::XPathContext;
 use Furl::S3::Error;
@@ -119,7 +119,7 @@ sub string_to_sign {
     }
     my( $path, $query ) = split /\?/, $resource;
     # sub-resource.
-    if ( $query && $query =~ m{^(acl|policy|location|uploads|versions)$} ) {
+    if ( $query && $query =~ m{^(acl|delete|policy|location|uploads|versions)$} ) {
         $str .= $resource;
     }
     elsif (exists $params->{uploadId} && exists $params->{partNumber}) {
@@ -545,6 +545,36 @@ sub delete_object {
     return 1;
 }
 
+sub delete_multi_objects {
+    my $self = shift;
+    my( $bucket, $object_sets, $headers ) = @_;
+    validate_pos( @_, 1, 
+                  { type => ARRAYREF },
+                  { type => HASHREF, optional => 1 }, );
+
+    $headers ||= +{};
+    my $subresource = "delete";
+
+    my $content = "<Delete><Quiet>true</Quiet>";
+    foreach my $set (@{$object_sets}) {
+        $content .= "<Object>";
+        $content .= sprintf "<Key>%s</Key>", $set->{key} if exists $set->{key};
+        $content .= sprintf "<VersionId>%s</VersionId>", $set->{version_id} if exists $set->{version_id};
+        $content .= "</Object>";
+    }
+    $content .= "</Delete>";
+    $headers->{'Content-Type'} = "text/xml";
+    $headers->{'Content-Length'} = length $content;
+    $headers->{'Content-MD5'}    = encode_base64(Digest::MD5->new->add($content)->digest, "");
+    my $furl_options = +{ content => $content };
+
+    my $res = $self->request( 'POST', $bucket, "/",  undef, $headers, $furl_options, $subresource );
+    unless ( _http_is_success($res->{code}) ) {
+        return $self->error( $res );
+    }
+    return 1;
+}
+
 sub clear_error {
     my $self = shift;
     delete $self->{_error};
@@ -810,6 +840,16 @@ returns a HASH-REF
 
 delete object.
 returns a boolean value.
+
+=head2 delete_multi_objects($bucket, $object_sets);
+
+delete multi_objects.
+returns XXXX.
+
+  # example
+  my $bucket = "your bucket";
+  my $object_sets = [ { key => "test1.txt" }, { key => "test2.txt" } ];
+  my $res = $s3->delete_multi_objects($bucket, $object_sets);
 
 =head2 copy_object($source_bucket, $source_key, $dest_bucket, $dest_key, [ \%headers ]);
 
