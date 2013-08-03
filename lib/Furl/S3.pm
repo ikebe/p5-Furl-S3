@@ -843,12 +843,12 @@ returns a boolean value.
 
 =head2 delete_multi_objects($bucket, $object_sets);
 
-delete multi_objects.
-returns XXXX.
+delete multi objects.
+returns a boolean value.
 
   # example
   my $bucket = "your bucket";
-  my $object_sets = [ { key => "test1.txt" }, { key => "test2.txt" } ];
+  my $object_sets = [ { key => "test1.txt" }, { key => "test2.txt", version_id => "VersionId" } ];
   my $res = $s3->delete_multi_objects($bucket, $object_sets);
 
 =head2 copy_object($source_bucket, $source_key, $dest_bucket, $dest_key, [ \%headers ]);
