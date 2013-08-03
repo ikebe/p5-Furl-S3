@@ -1,5 +1,7 @@
 Revision history for Perl extension Furl::S3
 
+0.02_05 Sun Aug  4 02:47:38 JST 2013
+        - add delete_multi_objects method and cpanfile
 0.02_04 Sun Apr 28 00:10:25 JST 2013
         - change method. find_or_create_bucket return value
 
