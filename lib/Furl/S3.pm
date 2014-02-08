@@ -899,11 +899,11 @@ initiate_multipart_upload, upload_part and complete_multipart_upload sample
   my $upload_id = $s3->initiate_multipart_upload($bucket, $key);
    
   my $i = 1;
-  my @part_number_etag_sets
+  my @part_number_etag_sets;
   open my $fh, "<", $key or die $!;
   while (read $fh, my $buffer, $chunk_size) {
       my $etag = $s3->upload_part($bucket, $key, $buffer, { uploadId => $upload_id, partNumber => $i });
-      push @part_number_etag_set, { part_number => $i, etag => $etag };
+      push @part_number_etag_sets, { part_number => $i, etag => $etag };
       $i++;
   }
   close $fh;
