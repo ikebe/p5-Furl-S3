@@ -1,5 +1,23 @@
 Revision history for Perl extension Furl::S3
 
+0.02_06 Sat Feb  8  14:46:21 JST 2014
+        - update delete_bucket. add optional recuirsive option
+        - update multipart upload pod example
+
+0.02_05 Sun Aug  4 02:47:38 JST 2013
+        - add delete_multi_objects method and cpanfile
+
+0.02_04 Sun Apr 28 00:10:25 JST 2013
+        - change method. find_or_create_bucket return value
+
+0.02_03 Sat Apr 27 23:52:36 2013 +0900
+        - change method. complete_multipart_upload given value
+
+0.02_02 Fri Apr 26 15:14:09 JST 2013
+        - added find_or_create_bucket method
+
+0.02_01 Mon Apr 22 01:03:01 2013 +0900
+        - added initiate_multipart_upload, upload_part, complete_multipart_upload methods
 0.02
         - use Furl::HTTP
         - handle utf-8 string correctly

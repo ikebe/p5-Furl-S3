@@ -11,6 +11,7 @@ unless ( $ENV{TEST_AWS_ACCESS_KEY_ID} && $ENV{TEST_AWS_SECRET_ACCESS_KEY} ) {
 my $s3 = Furl::S3->new(
     aws_access_key_id => $ENV{TEST_AWS_ACCESS_KEY_ID},
     aws_secret_access_key => $ENV{TEST_AWS_SECRET_ACCESS_KEY},
+    endpoint => $ENV{TEST_S3_ENDPOINT} || $Furl::S3::DEFAULT_ENDPOINT,
     secure => 0,
 );
 my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '-'. time);
@@ -29,11 +30,17 @@ my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '
     }
 }
 
+
 {
     ok $s3->create_bucket( $bucket ), 'create_bucket';
     my $res = $s3->list_objects( $bucket );
     is $res->{name}, $bucket, 'list_objects';
     ok !@{$res->{contents}}, 'no objects';
+}
+
+{
+    my $res = $s3->find_or_create_bucket($bucket);
+    is $res->{name}, $bucket, 'find_or_create_bucket';
 }
 
 {
@@ -131,6 +138,25 @@ my $bucket = $ENV{TEST_S3_BUCKET} || lc('test-'. $ENV{TEST_AWS_ACCESS_KEY_ID}. '
         like $obj->{key}, qr/^(foo\.txt|TEST\.txt|test\.jpg)$/, 'check objects';
         $s3->delete_object( $bucket, $obj->{key} );
     }
+}
+
+# delete multi objects
+{
+    my $str = time;
+    my @object_sets;
+    foreach my $i (1..5) {
+        my $key = "foo_$i.txt";
+        my $content = "$str $i";
+        $s3->create_object($bucket, $key, $content, +{
+            'x-amz-meta-foo' => 'bar',
+            content_type => 'text/plain',
+        });
+        push @object_sets, { key => $key };
+    }
+
+    ok $s3->delete_multi_objects($bucket, \@object_sets), "delete_multi_objects"; 
+    my $res = $s3->list_objects( $bucket );
+    is @{$res->{contents}}, 0, 'no objects after delete_multi_objects execution';
 }
 
 # multi-byte

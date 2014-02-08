@@ -13,7 +13,7 @@ my $s3 = Furl::S3->new(
 {
     my $date = time2str( time );
     my $resource = '/foo/bar/baz.jpg';
-    my $string_to_sign = $s3->string_to_sign('GET', $resource, {
+    my $string_to_sign = $s3->string_to_sign('GET', $resource, undef, {
         date => $date,
     });
 
@@ -33,7 +33,7 @@ my $s3 = Furl::S3->new(
     # encode_base64(md5('hoge'));
     my $md5 = '6nA+eqHv2gBk6qUH2eirfg==';
     my $content_type = 'text/plain';
-    my $string_to_sign = $s3->string_to_sign('PUT', $resource, {
+    my $string_to_sign = $s3->string_to_sign('PUT', $resource, undef, {
         'content-type' => $content_type,
         'content-md5' => $md5,
         'x-amz-acl' => 'public-read',
@@ -66,7 +66,7 @@ my $s3 = Furl::S3->new(
 
 {
     my $expires = time + 10;
-    my $string_to_sign = $s3->string_to_sign('GET', '/foo/bar-baz.txt', {
+    my $string_to_sign = $s3->string_to_sign('GET', '/foo/bar-baz.txt', undef, {
         expires => $expires,
     });
     my $sig = uri_escape( $s3->sign( $string_to_sign ) );

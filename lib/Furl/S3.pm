@@ -5,9 +5,9 @@ use warnings;
 use Class::Accessor::Lite;
 use Furl::HTTP qw(HEADERS_AS_HASHREF);
 use Digest::HMAC_SHA1;
+use Digest::MD5;
 use MIME::Base64 qw(encode_base64);
 use HTTP::Date;
-use Data::Dumper;
 use XML::LibXML;
 use XML::LibXML::XPathContext;
 use Furl::S3::Error;
@@ -17,7 +17,7 @@ use Carp ();
 
 Class::Accessor::Lite->mk_accessors(qw(aws_access_key_id aws_secret_access_key secure furl endpoint));
 
-our $VERSION = '0.02';
+our $VERSION = '0.02_06';
 our $DEFAULT_ENDPOINT = 's3.amazonaws.com';
 our $XMLNS = 'http://s3.amazonaws.com/doc/2006-03-01/';
 
@@ -96,7 +96,8 @@ sub is_dns_style {
 }
 
 sub string_to_sign {
-    my( $self, $method, $resource, $headers ) = @_;
+    my( $self, $method, $resource, $params, $headers ) = @_;
+    $params  ||= {};
     $headers ||= {};
     my %headers_to_sign;
     while (my($k, $v) = each %{$headers}) {
@@ -118,8 +119,14 @@ sub string_to_sign {
     }
     my( $path, $query ) = split /\?/, $resource;
     # sub-resource.
-    if ( $query && $query =~ m{^(acl|policy|location|versions)$} ) {
+    if ( $query && $query =~ m{^(acl|delete|policy|location|uploads|versions)$} ) {
         $str .= $resource;
+    }
+    elsif (exists $params->{uploadId} && exists $params->{partNumber}) {
+        $str .= sprintf "$path?partNumber=%s&uploadId=%s", $params->{partNumber}, $params->{uploadId};
+    }
+    elsif (exists $params->{uploadId}) {
+        $str .= sprintf "$path?uploadId=%s", $params->{uploadId};
     }
     else {
         $str .= $path;
@@ -177,12 +184,13 @@ sub host_and_path_query {
 
 sub request {
     my $self = shift;
-    my( $method, $bucket, $key, $params, $headers, $furl_options ) = @_;
+    my( $method, $bucket, $key, $params, $headers, $furl_options, $subresource ) = @_;
     validate_pos( @_, 1, 1, 
                   { type => SCALAR | UNDEF, optional => 1 },
                   { type => HASHREF | UNDEF | SCALAR , optional => 1, }, 
                   { type => HASHREF | UNDEF , optional => 1, },
-                  { type => HASHREF | UNDEF , optional => 1, }, );
+                  { type => HASHREF | UNDEF , optional => 1, },
+                  { type => SCALAR | UNDEF, optional => 1 } );
     $self->clear_error;
     $key ||= '';
     $params ||= +{};
@@ -197,17 +205,19 @@ sub request {
     if ( !$h{'expires'} && !$h{'date'} ) {
         $h{'date'} = time2str(time);
     }
-    my $resource = $self->resource( $bucket, $key );
+    my $resource = $self->resource( $bucket, $key, $subresource );
     my $string_to_sign = 
-        $self->string_to_sign( $method, $resource, \%h );
+        $self->string_to_sign( $method, $resource, $params, \%h );
     my $signed_string = $self->sign( $string_to_sign );
     my $auth_header = 'AWS '. $self->aws_access_key_id. ':'. $signed_string;
     $h{'authorization'} = $auth_header;
 
     my( $host, $path_query ) = 
         $self->host_and_path_query( $bucket, $key, $params );
+    $path_query .= "?$subresource" if defined $subresource;
     my %res;
     my @h = %h;
+
     @res{qw(ver code msg headers body)} = $self->furl->request(
         method => $method,
         scheme => ($self->secure ? 'https' : 'http'),
@@ -224,7 +234,7 @@ sub signed_url {
     validate_pos(@_, 1, 1, +{ regexp => qr/^\d+$/, });
     my( $bucket, $key, $expires ) = @_;
     my $resource = $self->resource( $bucket, $key );
-    my $string_to_sign = $self->string_to_sign('GET', $resource, +{
+    my $string_to_sign = $self->string_to_sign('GET', $resource, undef, +{
         expires => $expires,
     });
     my $sig = $self->sign( $string_to_sign );
@@ -286,10 +296,45 @@ sub create_bucket {
     return 1;
 }
 
+sub find_or_create_bucket {
+
+    my $self = shift;
+    my( $bucket, $headers ) = @_;
+    validate_pos( @_, 
+                  { type => SCALAR, 
+                    callbacks => { bucket_name => \&validate_bucket } },
+                  { type => HASHREF, optional => 1, } );
+
+    my $res = $self->list_objects( $bucket, { 'max-keys' => 0 } );
+    if ($res) {
+        return $res;
+    } elsif ($self->error->http_code eq "404") {
+       $self->create_bucket($bucket, $headers || {}) or return;
+        return $self->list_objects( $bucket, { 'max-keys' => 0 } );
+    } else {
+        return;
+    }
+}
+
 sub delete_bucket {
     my $self = shift;
-    my( $bucket ) = @_;
-    validate_pos( @_, 1 );
+    my( $bucket, $options ) = @_;
+    validate_pos( @_, 
+                  { type => SCALAR, 
+                    callbacks => { bucket_name => \&validate_bucket } },
+                  { type => HASHREF, optional => 1, } );
+
+    if (ref($options) eq "HASH" && exists $options->{recursive}) {
+        my @object_sets;
+        my $objects = $self->list_objects($bucket) or return;
+        if (scalar(@{$objects->{contents}}) > 0) {
+            foreach my $content (@{$objects->{contents}}) {
+                push @object_sets, { key => $content->{key} };
+            }
+            $self->delete_multi_objects($bucket, \@object_sets) or return;
+        }
+    }
+
     my $res = $self->request( 'DELETE', $bucket );
     unless ( _http_is_success($res->{code}) ) {
         return $self->error( $res );
@@ -389,6 +434,66 @@ sub copy_object {
     });
 }
 
+sub initiate_multipart_upload {
+
+    my $self = shift;
+    my( $bucket, $key, $headers ) = @_;
+    validate_pos( @_, 1, 1, 
+                  { type => HASHREF, optional => 1 } );
+    $headers ||= +{};
+    my $subresource = "uploads";
+    my $res = $self->request( 'POST', $bucket, $key, undef, undef, undef, $subresource );
+    unless ( _http_is_success($res->{code}) ) {
+        return $self->error( $res );
+    }
+    my $xpc = $self->_create_xpc( $res->{body} );
+    return $xpc->findvalue("/s3:InitiateMultipartUploadResult/s3:UploadId");
+}
+
+sub upload_part {
+
+    my $self = shift;
+    my( $bucket, $key, $part_content, $params, $headers ) = @_;
+    validate_pos( @_, 1, 1, 1,
+                  { type => HASHREF },
+                  { type => HASHREF, optional => 1 } );
+
+    $headers ||= +{};
+    $headers->{'Content-Length'} = length $part_content if !exists $headers->{'Content-Length'};
+    
+    my $furl_options = +{ content => $part_content };
+
+    my $res = $self->request( 'PUT', $bucket, $key, $params, $headers, $furl_options );
+    unless ( _http_is_success($res->{code}) ) {
+        return $self->error( $res );
+    }
+    return $self->_normalize_response( $res )->{etag};
+}
+
+sub complete_multipart_upload {
+
+    my $self = shift;
+    my( $bucket, $key, $part_number_etag_sets, $params, $headers ) = @_;
+    validate_pos( @_, 1, 1,
+                  { type => ARRAYREF },
+                  { type => HASHREF },
+                  { type => HASHREF, optional => 1 } );
+    $headers ||= +{};
+
+    my $content = "<CompleteMultipartUpload>";
+    foreach my $set (@{$part_number_etag_sets}) {
+  	    $content .= sprintf '<Part><PartNumber>%s</PartNumber><ETag>%s</ETag></Part>', $set->{part_number}, $set->{etag};
+    }
+    $content .= "</CompleteMultipartUpload>";
+    my $furl_options = +{ content => $content };
+
+    my $res = $self->request( 'POST', $bucket, $key, $params, $headers, $furl_options );
+    unless ( _http_is_success($res->{code}) ) {
+        return $self->error( $res );
+    }
+    return 1;
+}
+
 sub _normalize_response {
     my( $self, $res, $is_head ) = @_;
     my %res;
@@ -455,6 +560,36 @@ sub delete_object {
     return 1;
 }
 
+sub delete_multi_objects {
+    my $self = shift;
+    my( $bucket, $object_sets, $headers ) = @_;
+    validate_pos( @_, 1, 
+                  { type => ARRAYREF },
+                  { type => HASHREF, optional => 1 }, );
+
+    $headers ||= +{};
+    my $subresource = "delete";
+
+    my $content = "<Delete><Quiet>true</Quiet>";
+    foreach my $set (@{$object_sets}) {
+        $content .= "<Object>";
+        $content .= sprintf "<Key>%s</Key>", $set->{key} if exists $set->{key};
+        $content .= sprintf "<VersionId>%s</VersionId>", $set->{version_id} if exists $set->{version_id};
+        $content .= "</Object>";
+    }
+    $content .= "</Delete>";
+    $headers->{'Content-Type'} = "text/xml";
+    $headers->{'Content-Length'} = length $content;
+    $headers->{'Content-MD5'}    = encode_base64(Digest::MD5->new->add($content)->digest, "");
+    my $furl_options = +{ content => $content };
+
+    my $res = $self->request( 'POST', $bucket, "/",  undef, $headers, $furl_options, $subresource );
+    unless ( _http_is_success($res->{code}) ) {
+        return $self->error( $res );
+    }
+    return 1;
+}
+
 sub clear_error {
     my $self = shift;
     delete $self->{_error};
@@ -490,6 +625,10 @@ __END__
 =head1 NAME
 
 Furl::S3 - Furl based S3 client library.
+
+=head1 VERSION
+
+0.02_06
 
 =head1 SYNOPSIS
 
@@ -546,7 +685,7 @@ other parmeters are passed to Furl->new. see L<Furl> documents.
 
 =back
 
-=head2 request($method, $bucket, [ $key ], [ \%params ], [ \%headers ], [ \%furl_options ]);
+=head2 request($method, $bucket, [ $key ], [ \%params ], [ \%headers ], [ \%furl_options ], [ $subresource ]);
 
 sends signed request. returns a Furl::Response object.
 
@@ -576,6 +715,10 @@ HTTP headers.
 
 arguments of $furl->request.
 
+=item $subresource
+
+sub-resource of object.
+
 =back
 
 =head2 list_buckets
@@ -602,15 +745,25 @@ returns a HASH-REF
 create new bucket.
 returns a boolean value. 
 
-=head2 delete_bucket($bucket);
+=head2 find_or_create_bucket($bucket, [ \%headers ])
+
+find or create new bucket.
+if your bucket is exists, returns a bucket HASH-REF
+if your bucket is not exists, create new bucket and returns a bucket HASH-REF. 
+
+=head2 delete_bucket($bucket, [ \%options ]);
 
 delete bucket.
 returns a boolean value.
 
+Even if more objects are exists in your buckets, you can delete bucket.
+
+   $s3->delete_bucket($bucket, { recursive => 1 });
+
 =head2 list_objects($bucket, [ \%params ])
 
 list all objects in specified bucket.
-returna a HASH-REF 
+return a HASH-REF 
 
 
   {
@@ -707,10 +860,73 @@ returns a HASH-REF
 delete object.
 returns a boolean value.
 
+=head2 delete_multi_objects($bucket, $object_sets);
+
+delete multi objects.
+returns a boolean value.
+
+  # example
+  my $bucket = "your bucket";
+  my $object_sets = [ { key => "test1.txt" }, { key => "test2.txt", version_id => "VersionId" } ];
+  my $res = $s3->delete_multi_objects($bucket, $object_sets);
+
 =head2 copy_object($source_bucket, $source_key, $dest_bucket, $dest_key, [ \%headers ]);
 
 copy object.
 return a boolean value.
+
+=head2 initiate_multipart_upload($bucket, $key, [ \%headers ]);
+
+initialize large size object support.
+return a uploadId string value.
+
+  # example
+  UGJI_4BLQUK-muCCxVDm-w==
+
+=head2 upload_part($bucket, $key, $part_content, $params [ \%headers ]);
+
+upload part of large size object.
+return a etag string value.
+
+  # example
+  5e5563a0388a9dac86270ef14a23954b
+
+=head2 complete_multipart_upload($bucket, $key, $part_number_etag_sets, $params [ \%headers ]);
+
+complete large size object.
+returns a boolean value.
+
+initiate_multipart_upload, upload_part and complete_multipart_upload sample
+
+  #!/usr/bin/env perl
+  
+  use strict;
+  use feature qw(say);
+  use Furl::S3;
+  
+  my $aws_access_key_id     = "your aws access key";
+  my $aws_secret_access_key = "your aws secret access key";
+
+  my $s3 = Furl::S3->new(
+                   aws_access_key_id     => $aws_access_key_id,
+                   aws_secret_access_key => $aws_secret_access_key,
+                  );
+  
+  my $chunk_size = 5_242_880;
+  my $bucket = "your bucket";
+  my $key = "large_file";
+  my $upload_id = $s3->initiate_multipart_upload($bucket, $key);
+   
+  my $i = 1;
+  my @part_number_etag_sets;
+  open my $fh, "<", $key or die $!;
+  while (read $fh, my $buffer, $chunk_size) {
+      my $etag = $s3->upload_part($bucket, $key, $buffer, { uploadId => $upload_id, partNumber => $i });
+      push @part_number_etag_sets, { part_number => $i, etag => $etag };
+      $i++;
+  }
+  close $fh;
+  $s3->complete_multipart_upload($bucket, $key, \@part_number_etag_sets, { uploadId => $upload_id });
 
 =head1 AUTHOR
 
