@@ -17,7 +17,7 @@ use Carp ();
 
 Class::Accessor::Lite->mk_accessors(qw(aws_access_key_id aws_secret_access_key secure furl endpoint));
 
-our $VERSION = '0.02_05';
+our $VERSION = '0.02_06';
 our $DEFAULT_ENDPOINT = 's3.amazonaws.com';
 our $XMLNS = 'http://s3.amazonaws.com/doc/2006-03-01/';
 
@@ -628,7 +628,7 @@ Furl::S3 - Furl based S3 client library.
 
 =head1 VERSION
 
-0.02_05
+0.02_06
 
 =head1 SYNOPSIS
 
