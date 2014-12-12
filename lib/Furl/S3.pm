@@ -38,7 +38,7 @@ sub new {
     my $secure = delete $args{secure} || '0';
     my $endpoint = delete $args{endpoint} || $DEFAULT_ENDPOINT;
     my $furl = Furl::HTTP->new( 
-        agent => '$class/'. $VERSION,
+        agent => "$class/$VERSION",
         %args,
         header_format => HEADERS_AS_HASHREF,
     );
