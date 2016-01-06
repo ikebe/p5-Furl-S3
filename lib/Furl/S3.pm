@@ -23,8 +23,8 @@ our $XMLNS = 'http://s3.amazonaws.com/doc/2006-03-01/';
 
 sub new {
     my $class = shift;
-    validate_with( 
-        params => \@_, 
+    validate_with(
+        params => \@_,
         spec => {
             aws_access_key_id => 1,
             aws_secret_access_key => 1,
@@ -37,7 +37,7 @@ sub new {
     Carp::croak("aws_access_key_id and aws_secret_access_key are mandatory") unless $aws_access_key_id && $aws_secret_access_key;
     my $secure = delete $args{secure} || '0';
     my $endpoint = delete $args{endpoint} || $DEFAULT_ENDPOINT;
-    my $furl = Furl::HTTP->new( 
+    my $furl = Furl::HTTP->new(
         agent => '$class/'. $VERSION,
         %args,
         header_format => HEADERS_AS_HASHREF,
@@ -77,8 +77,8 @@ sub _boolean {
 # http://docs.amazonwebservices.com/AmazonS3/2006-03-01/dev/index.html?BucketRestrictions.html
 sub validate_bucket {
     my $bucket = shift;
-    return 
-        ($bucket =~ qr/^[a-z0-9][a-z0-9\._-]{2,254}$/) && 
+    return
+        ($bucket =~ qr/^[a-z0-9][a-z0-9\._-]{2,254}$/) &&
             ($bucket !~ /^\d+\.\d+\.\d+\.\d+$/); # IP Address
 }
 
@@ -101,7 +101,7 @@ sub string_to_sign {
     my %headers_to_sign;
     while (my($k, $v) = each %{$headers}) {
         my $key = lc $k;
-        if ( $key =~ /^(content-md5|content-type|date|expires)$/ or 
+        if ( $key =~ /^(content-md5|content-type|date|expires)$/ or
                  $key =~ /^x-amz-/ ) {
             $headers_to_sign{$key} = _trim($v);
         }
@@ -153,7 +153,7 @@ sub resource {
 sub _path_query {
     my( $self, $path, $q ) = @_;
     $path = '/'. $path unless $path =~ m{^/};
-    my $qs = ref($q) eq 'HASH' ? 
+    my $qs = ref($q) eq 'HASH' ?
         join('&', map { $_. '='. uri_escape_utf8( $q->{$_} ) } keys %{$q}) : $q;
     $path .= '?'. $qs if $qs;
     $path;
@@ -178,9 +178,9 @@ sub host_and_path_query {
 sub request {
     my $self = shift;
     my( $method, $bucket, $key, $params, $headers, $furl_options ) = @_;
-    validate_pos( @_, 1, 1, 
+    validate_pos( @_, 1, 1,
                   { type => SCALAR | UNDEF, optional => 1 },
-                  { type => HASHREF | UNDEF | SCALAR , optional => 1, }, 
+                  { type => HASHREF | UNDEF | SCALAR , optional => 1, },
                   { type => HASHREF | UNDEF , optional => 1, },
                   { type => HASHREF | UNDEF , optional => 1, }, );
     $self->clear_error;
@@ -198,13 +198,13 @@ sub request {
         $h{'date'} = time2str(time);
     }
     my $resource = $self->resource( $bucket, $key );
-    my $string_to_sign = 
+    my $string_to_sign =
         $self->string_to_sign( $method, $resource, \%h );
     my $signed_string = $self->sign( $string_to_sign );
     my $auth_header = 'AWS '. $self->aws_access_key_id. ':'. $signed_string;
     $h{'authorization'} = $auth_header;
 
-    my( $host, $path_query ) = 
+    my( $host, $path_query ) =
         $self->host_and_path_query( $bucket, $key, $params );
     my %res;
     my @h = %h;
@@ -261,7 +261,7 @@ sub list_buckets {
             name => $name,
             creation_date => $creation_date,
         };
-    } 
+    }
     return +{
         buckets => \@buckets,
         owner => +{
@@ -274,8 +274,8 @@ sub list_buckets {
 sub create_bucket {
     my $self = shift;
     my( $bucket, $headers ) = @_;
-    validate_pos( @_, 
-                  { type => SCALAR, 
+    validate_pos( @_,
+                  { type => SCALAR,
                     callbacks => { bucket_name => \&validate_bucket } },
                   { type => HASHREF, optional => 1, } );
 
@@ -340,8 +340,8 @@ sub list_objects {
 sub create_object {
     my $self = shift;
     my( $bucket, $key, $content, $headers ) = @_;
-    validate_pos( @_, 1, 1, 
-                  { type => HANDLE | SCALAR }, 
+    validate_pos( @_, 1, 1,
+                  { type => HANDLE | SCALAR },
                   { type => HASHREF, optional => 1 } );
     my $res = $self->request( 'PUT', $bucket, $key, undef, $headers, +{ content => $content });
     unless ( _http_is_success($res->{code}) ) {
@@ -377,8 +377,8 @@ sub create_object_from_file {
 sub copy_object {
     my $self = shift;
     my( $source_bucket, $source_key, $dest_bucket, $dest_key, $headers ) = @_;
-    validate_pos( @_, 
-                  1, 1, 1, 
+    validate_pos( @_,
+                  1, 1, 1,
                   { type => SCALAR | UNDEF, optional => 1 },
                   { type => HASHREF, optional => 1} );
     $headers ||= +{};
@@ -413,7 +413,7 @@ sub _normalize_response {
 sub get_object {
     my $self = shift;
     my( $bucket, $key, $headers, $furl_options ) = @_;
-    validate_pos( @_, 1, 1, 
+    validate_pos( @_, 1, 1,
                   { type => HASHREF, optional => 1 },
                   { type => HASHREF, optional => 1 }, );
     my $res = $self->request( 'GET', $bucket, $key, undef, $headers, $furl_options );
@@ -495,8 +495,8 @@ Furl::S3 - Furl based S3 client library.
 
   use Furl::S3;
 
-  my $s3 = Furl::S3->new( 
-      aws_access_key_id => '...', 
+  my $s3 = Furl::S3->new(
+      aws_access_key_id => '...',
       aws_secret_access_key => '...',
   );
   $s3->create_bucket($bucket) or die $s3->error;
@@ -526,7 +526,7 @@ I<%args> are below.
 
 =over
 
-=item aws_access_key_id 
+=item aws_access_key_id
 
 AWS Access Key ID
 
@@ -600,7 +600,7 @@ returns a HASH-REF
 =head2 create_bucket($bucket, [ \%headers ])
 
 create new bucket.
-returns a boolean value. 
+returns a boolean value.
 
 =head2 delete_bucket($bucket);
 
@@ -610,7 +610,7 @@ returns a boolean value.
 =head2 list_objects($bucket, [ \%params ])
 
 list all objects in specified bucket.
-returna a HASH-REF 
+returna a HASH-REF
 
 
   {
@@ -629,7 +629,7 @@ returna a HASH-REF
                'size' => '10000',
                'key' => 'foo/bar/baz.txt'
           },
-          #... 
+          #...
       ],
       'name' => 'Your bucket name',
       'delimiter' => '',
@@ -676,7 +676,7 @@ get object.
 returns a HASH-REF.
 
   {
-      content => $content, 
+      content => $content,
       content_length => '..',
       etag => '...',
       content_type => '...',
@@ -711,6 +711,10 @@ returns a boolean value.
 
 copy object.
 return a boolean value.
+
+=head2 signed_url($bucket, $key, $expiry_epoch);
+
+returns a URL pointing to the resource ($key) given.
 
 =head1 AUTHOR
 

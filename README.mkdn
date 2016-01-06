@@ -6,8 +6,8 @@ Furl::S3 - Furl based S3 client library.
 
   use Furl::S3;
 
-  my $s3 = Furl::S3->new( 
-      aws_access_key_id => '...', 
+  my $s3 = Furl::S3->new(
+      aws_access_key_id => '...',
       aws_secret_access_key => '...',
   );
   $s3->create_bucket($bucket) or die $s3->error;
@@ -35,7 +35,7 @@ returns a new Furl::S3 object.
 
 _%args_ are below.
 
-- aws_access_key_id 
+- aws_access_key_id
 
 AWS Access Key ID
 
@@ -51,7 +51,7 @@ boolean flag. uses SSL connection or not.
 
 S3 endpoint hostname. the default value is _s3.amazonaws.com_
 
-other parmeters are passed to Furl->new. see [Furl](http://search.cpan.org/perldoc?Furl) documents.
+other parameters are passed to Furl->new. see [Furl](http://search.cpan.org/perldoc?Furl) documents.
 
 ## list_buckets
 
@@ -75,7 +75,7 @@ returns a HASH-REF
 ## create_bucket($bucket, [ \%headers ])
 
 create new bucket.
-returns a boolean value. 
+returns a boolean value.
 
 ## delete_bucket($bucket);
 
@@ -85,7 +85,7 @@ returns a boolean value.
 ## list_objects($bucket, [ \%params ])
 
 list all objects in specified bucket.
-returna a HASH-REF 
+returna a HASH-REF
 
 
 
@@ -105,7 +105,7 @@ returna a HASH-REF
                'size' => '10000',
                'key' => 'foo/bar/baz.txt'
           },
-          #... 
+          #...
       ],
       'name' => 'Your bucket name',
       'delimiter' => '',
@@ -148,7 +148,7 @@ get object.
 returns a HASH-REF.
 
   {
-      content => $content, 
+      content => $content,
       content_length => '..',
       etag => '...',
       content_type => '...',
@@ -178,6 +178,10 @@ returns a HASH-REF
 
 delete object.
 returns a boolean value.
+
+## signed_url($bucket, $key, $expiry_epoch);
+
+returns a URL pointing to the resource ($key) given.
 
 # AUTHOR
 
